@@ -1,4 +1,5 @@
 use rustyline::error::ReadlineError;
+use std::fmt;
 use std::io;
 use thiserror::Error;
 #[derive(Debug, Error)]
@@ -7,6 +8,11 @@ pub enum InterpreterError {
     Io {
         #[from]
         source: io::Error,
+    },
+    #[error("Format error: {source}")]
+    Fmt {
+        #[from]
+        source: fmt::Error,
     },
     #[error("Readline error: {source}")]
     RL {
