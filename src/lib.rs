@@ -1,5 +1,6 @@
 pub mod errors;
 mod expr;
+mod parser;
 mod scanner;
 
 pub use crate::errors::{InterpreterError, InterpreterResult};

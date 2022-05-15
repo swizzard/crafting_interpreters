@@ -20,7 +20,7 @@ pub(crate) fn scan_tokens(s: String) -> InterpreterResult<Vec<Token>> {
     }
     tokens.push(Token::Eof { line });
     if errored {
-        Err(InterpreterError::ParseError)
+        Err(InterpreterError::Parse { line })
     } else {
         Ok(tokens)
     }
@@ -223,7 +223,7 @@ fn ident_t(s: String, line: usize) -> InterpreterResult<Token> {
     Ok(res)
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     // single-character tokens
     LeftParen {
@@ -356,6 +356,54 @@ pub enum Token {
     Whitespace,
 }
 
+impl Token {
+    pub(crate) fn get_line(&self) -> Option<usize> {
+        use Token::*;
+        match self {
+            Comment | Whitespace => None,
+            LeftParen { line } => Some(*line),
+            RightParen { line } => Some(*line),
+            LeftBrace { line } => Some(*line),
+            RightBrace { line } => Some(*line),
+            Comma { line } => Some(*line),
+            Dot { line } => Some(*line),
+            Minus { line } => Some(*line),
+            Plus { line } => Some(*line),
+            Semicolon { line } => Some(*line),
+            Slash { line } => Some(*line),
+            Star { line } => Some(*line),
+            Bang { line } => Some(*line),
+            BangEqual { line } => Some(*line),
+            Equal { line } => Some(*line),
+            EqualEqual { line } => Some(*line),
+            Greater { line } => Some(*line),
+            GreaterEqual { line } => Some(*line),
+            Less { line } => Some(*line),
+            LessEqual { line } => Some(*line),
+            Identifier { line, .. } => Some(*line),
+            r#String { line, .. } => Some(*line),
+            Number { line, .. } => Some(*line),
+            And { line } => Some(*line),
+            Class { line } => Some(*line),
+            Else { line } => Some(*line),
+            False { line } => Some(*line),
+            Fun { line } => Some(*line),
+            For { line } => Some(*line),
+            If { line } => Some(*line),
+            Nil { line } => Some(*line),
+            Or { line } => Some(*line),
+            Print { line } => Some(*line),
+            Return { line } => Some(*line),
+            Super { line } => Some(*line),
+            This { line } => Some(*line),
+            True { line } => Some(*line),
+            Var { line } => Some(*line),
+            While { line } => Some(*line),
+            Eof { line } => Some(*line),
+        }
+    }
+}
+
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Token::*;
@@ -412,7 +460,7 @@ mod test {
         scan_tokens(s.into())
     }
     #[test]
-    fn test_singletons() -> InterpreterResult<()> {
+    fn scanner_singletons() -> InterpreterResult<()> {
         assert_eq!(Token::LeftParen { line: 1 }, st("(")?[0]);
         assert_eq!(Token::RightParen { line: 1 }, st(")")?[0]);
         assert_eq!(Token::LeftBrace { line: 1 }, st("{")?[0]);
@@ -426,7 +474,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_bang() -> InterpreterResult<()> {
+    fn scanner_bang() -> InterpreterResult<()> {
         assert_eq!(Token::BangEqual { line: 1 }, st("!=")?[0]);
         assert_eq!(Token::Bang { line: 1 }, st("!")?[0]);
         let res = st("!,")?;
@@ -438,7 +486,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_eq() -> InterpreterResult<()> {
+    fn scanner_eq() -> InterpreterResult<()> {
         assert_eq!(Token::Equal { line: 1 }, st("=")?[0]);
         assert_eq!(Token::EqualEqual { line: 1 }, st("==")?[0]);
         let res = st("=,")?;
@@ -450,7 +498,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_lt() -> InterpreterResult<()> {
+    fn scanner_lt() -> InterpreterResult<()> {
         assert_eq!(Token::Less { line: 1 }, st("<")?[0]);
         assert_eq!(Token::LessEqual { line: 1 }, st("<=")?[0]);
         let res = st("<,")?;
@@ -462,7 +510,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_gt() -> InterpreterResult<()> {
+    fn scanner_gt() -> InterpreterResult<()> {
         assert_eq!(Token::Greater { line: 1 }, st(">")?[0]);
         assert_eq!(Token::GreaterEqual { line: 1 }, st(">=")?[0]);
         let res = st(">,")?;
@@ -474,7 +522,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_slash() -> InterpreterResult<()> {
+    fn scanner_slash() -> InterpreterResult<()> {
         assert_eq!(Token::Comment, st("// comment\n")?[0]);
         assert_eq!(Token::Slash { line: 1 }, st("/")?[0]);
         let res = st("/,")?;
@@ -487,7 +535,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_string() -> InterpreterResult<()> {
+    fn scanner_string() -> InterpreterResult<()> {
         let res = st("\"foo\"")?;
         assert_eq!(
             Token::r#String {
@@ -519,14 +567,14 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_whitespace_dont_inc_line() -> InterpreterResult<()> {
+    fn scanner_whitespace_dont_inc_line() -> InterpreterResult<()> {
         assert_eq!(Token::Whitespace, st(" ")?[0]);
         assert_eq!(Token::Whitespace, st("\t")?[0]);
         assert_eq!(Token::Whitespace, st("     \t\t\r   ")?[0]);
         Ok(())
     }
     #[test]
-    fn test_whitespace_inc_line() -> InterpreterResult<()> {
+    fn scanner_whitespace_inc_line() -> InterpreterResult<()> {
         let res = st("  ,\n,  ")?;
         assert_eq!(Token::Whitespace, res[0]);
         assert_eq!(Token::Comma { line: 1 }, res[1]);
@@ -536,7 +584,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_number() -> InterpreterResult<()> {
+    fn scanner_number() -> InterpreterResult<()> {
         assert_eq!(
             Token::Number {
                 lexeme: "32".into(),
@@ -585,7 +633,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_non_reserved_identifier() -> InterpreterResult<()> {
+    fn scanner_non_reserved_identifier() -> InterpreterResult<()> {
         assert_eq!(
             Token::Identifier {
                 lexeme: "_foo".into(),
@@ -622,7 +670,7 @@ mod test {
         Ok(())
     }
     #[test]
-    fn test_reserved_identifier() -> InterpreterResult<()> {
+    fn scanner_reserved_identifier() -> InterpreterResult<()> {
         assert_eq!(Token::And { line: 1 }, st("and")?[0]);
         assert_eq!(Token::Class { line: 1 }, st("class")?[0]);
         assert_eq!(Token::Else { line: 1 }, st("else")?[0]);

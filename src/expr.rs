@@ -6,6 +6,7 @@ use std::fmt::Write;
 pub enum Value {
     r#String(String),
     Number(f32),
+    Bool(bool),
     Nil,
 }
 
@@ -14,6 +15,7 @@ impl std::fmt::Display for Value {
         match self {
             Self::r#String(s) => write!(f, "{}", s),
             Self::Number(n) => write!(f, "{}", n),
+            Self::Bool(b) => write!(f, "{}", b),
             Self::Nil => f.write_str("nil"),
         }
     }
@@ -36,6 +38,30 @@ pub enum Expr {
         operator: Token,
         right: Box<Expr>,
     },
+}
+
+impl Expr {
+    pub fn literal_num(n: f32) -> Self {
+        Self::Literal {
+            value: Value::Number(n),
+        }
+    }
+    pub fn literal_string<T>(s: T) -> Self
+    where
+        T: Into<String>,
+    {
+        Self::Literal {
+            value: Value::r#String(s.into()),
+        }
+    }
+    pub fn literal_bool(b: bool) -> Self {
+        Self::Literal {
+            value: Value::Bool(b),
+        }
+    }
+    pub fn literal_nil() -> Self {
+        Self::Literal { value: Value::Nil }
+    }
 }
 
 #[derive(Default)]
@@ -102,48 +128,38 @@ impl Expr {
 mod tests {
     use super::*;
     #[test]
-    fn test_print_literal() -> InterpreterResult<()> {
-        let e = Expr::Literal {
-            value: Value::r#String("hello".into()),
-        };
+    fn expr_print_literal() -> InterpreterResult<()> {
+        let e = Expr::literal_string("hello");
         assert_eq!(e.print()?, String::from("hello"));
-        let e = Expr::Literal {
-            value: Value::Number(3.0),
-        };
+        let e = Expr::literal_num(3.0);
         assert_eq!(e.print()?, String::from("3"));
-        let e = Expr::Literal { value: Value::Nil };
+        let e = Expr::literal_nil();
         assert_eq!(e.print()?, String::from("nil"));
         Ok(())
     }
     #[test]
-    fn test_grouping() -> InterpreterResult<()> {
+    fn expr_grouping() -> InterpreterResult<()> {
         let e = Expr::Grouping {
-            expression: Box::new(Expr::Literal { value: Value::Nil }),
+            expression: Box::new(Expr::literal_nil()),
         };
         assert_eq!(e.print()?, String::from("(grouping nil)"));
         Ok(())
     }
     #[test]
-    fn test_binary() -> InterpreterResult<()> {
+    fn expr_binary() -> InterpreterResult<()> {
         let e = Expr::Binary {
-            left: Box::new(Expr::Literal {
-                value: Value::Number(1.0),
-            }),
+            left: Box::new(Expr::literal_num(1.0)),
             operator: Token::Plus { line: 0 },
-            right: Box::new(Expr::Literal {
-                value: Value::Number(2.0),
-            }),
+            right: Box::new(Expr::literal_num(2.0)),
         };
         assert_eq!(e.print()?, String::from("(+ 1 2)"));
         Ok(())
     }
     #[test]
-    fn test_unary() -> InterpreterResult<()> {
+    fn expr_unary() -> InterpreterResult<()> {
         let e = Expr::Unary {
             operator: Token::Minus { line: 0 },
-            right: Box::new(Expr::Literal {
-                value: Value::Number(1.0),
-            }),
+            right: Box::new(Expr::literal_num(1.0)),
         };
         assert_eq!(e.print()?, String::from("(- 1)"));
         Ok(())

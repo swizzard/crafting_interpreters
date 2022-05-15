@@ -23,8 +23,8 @@ pub enum InterpreterError {
     Interpreter { line: usize, message: String },
     #[error("Usage: rlox [script]")]
     Usage,
-    #[error("Error parsing code")]
-    ParseError,
+    #[error("Error parsing code on line {line}")]
+    Parse { line: usize },
 }
 
 pub type InterpreterResult<T> = Result<T, InterpreterError>;
