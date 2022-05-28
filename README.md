@@ -4,3 +4,4 @@
 ### [Chapter 4](../main/notes/4.md)
 ### [Chapter 5](../main/notes/5.md)
 ### [Chapter 6](../main/notes/6.md)
+### [Chapter 7](../main/notes/7.md)

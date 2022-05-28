@@ -12,7 +12,7 @@ fn main() {
         }
         Err(e) => {
             println!("{:?}", e);
-            exit(1)
+            exit(70)
         }
     }
 }

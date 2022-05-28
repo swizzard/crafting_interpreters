@@ -1,5 +1,6 @@
 pub mod errors;
 mod expr;
+mod interpreter;
 mod parser;
 mod scanner;
 
@@ -56,8 +57,16 @@ fn prompt() -> InterpreterResult<()> {
 
 fn run(s: String) -> InterpreterResult<()> {
     let tokens = scan_tokens(s)?;
-    for t in tokens.iter() {
-        println!("{:?}", t);
+    let (expr, errs) = parser::parse(tokens);
+    if let Some(ref res) = expr {
+        println!("{}", interpreter::interpret(res)?);
+        Ok(())
+    } else {
+        let mut e = InterpreterError::Unknown;
+        for err in errs.into_iter() {
+            println!("{}", &err);
+            e = err;
+        }
+        Err(e)
     }
-    Ok(())
 }

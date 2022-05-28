@@ -1,13 +1,36 @@
-use crate::errors::InterpreterResult;
+use crate::errors::{InterpreterError, InterpreterResult};
 use crate::scanner::Token;
+use float_eq::float_eq;
+use std::cmp::PartialEq;
+use std::convert::TryFrom;
 use std::fmt::Write;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Value {
     r#String(String),
     Number(f32),
     Bool(bool),
     Nil,
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Self::r#String(s) => match other {
+                Self::r#String(o) => s == o,
+                _ => false,
+            },
+            Self::Number(n) => match other {
+                Self::Number(o) => float_eq!(n, o, abs <= 0.000_1),
+                _ => false,
+            },
+            Self::Bool(b) => match other {
+                Self::Bool(o) => b == o,
+                _ => false,
+            },
+            Self::Nil => matches!(other, Self::Nil),
+        }
+    }
 }
 
 impl std::fmt::Display for Value {
@@ -17,6 +40,93 @@ impl std::fmt::Display for Value {
             Self::Number(n) => write!(f, "{}", n),
             Self::Bool(b) => write!(f, "{}", b),
             Self::Nil => f.write_str("nil"),
+        }
+    }
+}
+
+impl TryFrom<f32> for Value {
+    type Error = InterpreterError;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Ok(Value::Number(value))
+    }
+}
+
+impl TryFrom<String> for Value {
+    type Error = InterpreterError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Value::r#String(value))
+    }
+}
+
+impl TryFrom<bool> for Value {
+    type Error = InterpreterError;
+
+    fn try_from(value: bool) -> Result<Self, Self::Error> {
+        Ok(Value::Bool(value))
+    }
+}
+
+impl TryFrom<Value> for f32 {
+    type Error = InterpreterError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(n) => Ok(n),
+            Value::Bool(_) => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("boolean"),
+            )),
+            Value::r#String(_) => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("string"),
+            )),
+            Value::Nil => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("nil"),
+            )),
+        }
+    }
+}
+
+impl TryFrom<Value> for String {
+    type Error = InterpreterError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(_) => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("string"),
+            )),
+            Value::Bool(_) => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("boolean"),
+            )),
+            Value::r#String(s) => Ok(s),
+            Value::Nil => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("nil"),
+            )),
+        }
+    }
+}
+
+impl TryFrom<Value> for bool {
+    type Error = InterpreterError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(_) => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("number"),
+            )),
+            Value::Bool(b) => Ok(b),
+            Value::r#String(_) => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("boolean"),
+            )),
+            Value::Nil => Ok(false),
         }
     }
 }
@@ -38,6 +148,136 @@ pub enum Expr {
         operator: Token,
         right: Box<Expr>,
     },
+}
+
+impl TryFrom<String> for Expr {
+    type Error = InterpreterError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Expr::literal_string(value))
+    }
+}
+
+impl TryFrom<f32> for Expr {
+    type Error = InterpreterError;
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        Ok(Expr::literal_num(value))
+    }
+}
+
+impl TryFrom<&Expr> for String {
+    type Error = InterpreterError;
+    fn try_from(value: &Expr) -> Result<Self, Self::Error> {
+        match value {
+            Expr::Literal {
+                value: Value::r#String(s),
+            } => Ok(s.clone()),
+            Expr::Literal {
+                value: Value::Number(_),
+            } => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("number"),
+            )),
+            Expr::Literal { value: Value::Nil } => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("nil"),
+            )),
+            Expr::Literal {
+                value: Value::Bool(_),
+            } => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("boolean"),
+            )),
+            Expr::Binary { .. } => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("binary expression"),
+            )),
+            Expr::Grouping { .. } => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("grouping expression"),
+            )),
+            Expr::Unary { .. } => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("unary expression"),
+            )),
+        }
+    }
+}
+
+impl TryFrom<&Expr> for f32 {
+    type Error = InterpreterError;
+    fn try_from(value: &Expr) -> Result<Self, Self::Error> {
+        match value {
+            Expr::Literal {
+                value: Value::Number(n),
+            } => Ok(*n),
+            Expr::Literal {
+                value: Value::r#String(_),
+            } => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("string"),
+            )),
+            Expr::Literal { value: Value::Nil } => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("nil"),
+            )),
+            Expr::Literal {
+                value: Value::Bool(_),
+            } => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("boolean"),
+            )),
+            Expr::Binary { .. } => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("binary expression"),
+            )),
+            Expr::Grouping { .. } => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("grouping expression"),
+            )),
+            Expr::Unary { .. } => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("unary expression"),
+            )),
+        }
+    }
+}
+impl TryFrom<&Expr> for bool {
+    type Error = InterpreterError;
+    fn try_from(value: &Expr) -> Result<Self, Self::Error> {
+        match value {
+            Expr::Literal {
+                value: Value::Bool(b),
+            } => Ok(*b),
+            Expr::Literal {
+                value: Value::r#String(_),
+            } => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("string"),
+            )),
+            Expr::Literal { value: Value::Nil } => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("nil"),
+            )),
+            Expr::Literal {
+                value: Value::Number(_),
+            } => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("number"),
+            )),
+            Expr::Binary { .. } => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("binary expression"),
+            )),
+            Expr::Grouping { .. } => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("grouping expression"),
+            )),
+            Expr::Unary { .. } => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("unary expression"),
+            )),
+        }
+    }
 }
 
 impl Expr {
