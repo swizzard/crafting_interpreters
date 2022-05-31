@@ -148,6 +148,9 @@ pub enum Expr {
         operator: Token,
         right: Box<Expr>,
     },
+    Variable {
+        name: Token,
+    },
 }
 
 impl TryFrom<String> for Expr {
@@ -199,6 +202,10 @@ impl TryFrom<&Expr> for String {
                 String::from("string"),
                 String::from("unary expression"),
             )),
+            Expr::Variable { .. } => Err(InterpreterError::type_error(
+                String::from("string"),
+                String::from("variable"),
+            )),
         }
     }
 }
@@ -238,6 +245,10 @@ impl TryFrom<&Expr> for f32 {
                 String::from("number"),
                 String::from("unary expression"),
             )),
+            Expr::Variable { .. } => Err(InterpreterError::type_error(
+                String::from("number"),
+                String::from("variable"),
+            )),
         }
     }
 }
@@ -275,6 +286,10 @@ impl TryFrom<&Expr> for bool {
             Expr::Unary { .. } => Err(InterpreterError::type_error(
                 String::from("boolean"),
                 String::from("unary expression"),
+            )),
+            Expr::Variable { .. } => Err(InterpreterError::type_error(
+                String::from("boolean"),
+                String::from("variable"),
             )),
         }
     }
@@ -320,6 +335,7 @@ impl ExprPrinter {
                 right,
             } => self.build_binary(operator, left.as_ref(), right.as_ref()),
             Expr::Unary { operator, right } => self.build_unary(operator, right.as_ref()),
+            Expr::Variable { name } => self.build_variable(name),
         }
     }
     fn print(self) -> InterpreterResult<String> {
@@ -327,6 +343,10 @@ impl ExprPrinter {
     }
     fn build_literal(mut self, value: &Value) -> InterpreterResult<Self> {
         write!(&mut self.s, "{}", value)?;
+        Ok(self)
+    }
+    fn build_variable(mut self, name: &Token) -> InterpreterResult<Self> {
+        write!(&mut self.s, "{}", name)?;
         Ok(self)
     }
     fn build_grouping(self, expr: &Expr) -> InterpreterResult<Self> {

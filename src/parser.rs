@@ -1,16 +1,17 @@
 use crate::errors::{InterpreterError, InterpreterResult};
 use crate::expr::Expr;
 use crate::scanner::Token;
+use crate::stmt::Stmt;
 
-pub fn parse(tokens: Vec<Token>) -> (Option<Expr>, Vec<InterpreterError>) {
+pub fn parse(tokens: Vec<Token>) -> (Option<Stmt>, Vec<InterpreterError>) {
     let mut pos: usize = 0;
     let mut errors: Vec<InterpreterError> = Vec::default();
-    let mut final_expr: Option<Expr> = None;
+    let mut final_stmt: Option<Stmt> = None;
     let cleaned = clean_tokens(tokens);
     loop {
-        match expression(&cleaned, &mut pos, 0) {
-            Ok(expr) => {
-                final_expr.replace(expr);
+        match declaration(&cleaned, &mut pos, 0) {
+            Ok(stmt) => {
+                final_stmt.replace(stmt);
                 break;
             }
             Err(err) => {
@@ -23,40 +24,61 @@ pub fn parse(tokens: Vec<Token>) -> (Option<Expr>, Vec<InterpreterError>) {
             }
         }
     }
-    (final_expr, errors)
+    (final_stmt, errors)
 }
 
-fn synchronize(tokens: &[Token], pos: &mut usize) -> bool {
-    *pos += 1;
-    while let Some(t) = tokens.get(*pos) {
-        if let Some(Token::Semicolon { .. }) = previous(tokens, pos, 0).ok().as_ref() {
-            return true;
-        } else {
-            match t {
-                Token::Class { .. }
-                | Token::Fun { .. }
-                | Token::Var { .. }
-                | Token::For { .. }
-                | Token::If { .. }
-                | Token::While { .. }
-                | Token::Print { .. }
-                | Token::Return { .. } => return true,
-                _ => *pos += 1,
-            }
-        }
+fn declaration(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Stmt> {
+    if match_var(tokens, pos) {
+        variable(tokens, pos, line)
+    } else {
+        statement(tokens, pos, line)
     }
-    false
 }
 
-fn clean_tokens(tokens: Vec<Token>) -> Vec<Token> {
-    tokens
-        .into_iter()
-        .filter(|t| matches!(t, Token::Comment | Token::Whitespace))
-        .collect()
+fn variable(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Stmt> {
+    let name = identifier(tokens, pos, line)?;
+    let initializer = if match_assign(tokens, pos) {
+        Some(Box::new(expression(tokens, pos, line)?))
+    } else {
+        None
+    };
+    expect_semicolon(tokens, pos, line)?;
+    Ok(Stmt::Variable { name, initializer })
+}
+
+fn statement(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Stmt> {
+    if match_print(tokens, pos) {
+        let expr = expression(tokens, pos, line)?;
+        expect_semicolon(tokens, pos, line)?;
+        Ok(Stmt::Print {
+            expr: Box::new(expr),
+        })
+    } else {
+        let expr = expression(tokens, pos, line)?;
+        expect_semicolon(tokens, pos, line)?;
+        Ok(Stmt::Expr {
+            expr: Box::new(expr),
+        })
+    }
 }
 
 fn expression(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Expr> {
-    equality(tokens, pos, line)
+    if match_identifier(tokens, pos) {
+        assign(tokens, pos, line);
+    } else {
+        equality(tokens, pos, line)
+    }
+}
+
+fn assign(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Stmt> {
+        *pos -= 1;
+        let name = identifier(tokens, pos, line)?;
+        if match_assign(tokens, pos) {
+            let initializer = Some(Box::new(expression(tokens, pos, line)?));
+            expect_semicolon(tokens, pos, line)?;
+            Ok(
+
+    };
 }
 
 fn equality(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Expr> {
@@ -169,9 +191,27 @@ fn primary(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResu
                 Err(InterpreterError::Parse { line: *line })
             }
         }
+        ident @ Token::Identifier { .. } => {
+            *pos += 1;
+            Ok(Expr::Variable {
+                name: ident.clone(),
+            })
+        }
         t => Err(InterpreterError::Parse {
             line: t.get_line().unwrap_or(line),
         }),
+    }
+}
+
+fn identifier(tokens: &[Token], pos: &mut usize, line: usize) -> InterpreterResult<Token> {
+    if let Some(ident @ Token::Identifier { .. }) = tokens.get(*pos) {
+        *pos += 1;
+        Ok(ident.clone())
+    } else {
+        Err(InterpreterError::SyntaxError {
+            line,
+            message: "Expected variable name".into(),
+        })
     }
 }
 
@@ -228,8 +268,89 @@ fn match_unary(tokens: &[Token], pos: &mut usize) -> bool {
     })
 }
 
+fn match_print(tokens: &[Token], pos: &mut usize) -> bool {
+    tokens.get(*pos).map_or(false, |t| match t {
+        Token::Print { .. } => {
+            *pos += 1;
+            true
+        }
+        _ => false,
+    })
+}
+
+fn match_var(tokens: &[Token], pos: &mut usize) -> bool {
+    tokens.get(*pos).map_or(false, |t| match t {
+        Token::Var { .. } => {
+            *pos += 1;
+            true
+        }
+        _ => false,
+    })
+}
+
+fn match_assign(tokens: &[Token], pos: &mut usize) -> bool {
+    tokens.get(*pos).map_or(false, |t| match t {
+        Token::Equal { .. } => {
+            *pos += 1;
+            true
+        }
+        _ => false,
+    })
+}
+
+fn match_identifier(tokens: &[Token], pos: &mut usize) -> bool {
+    tokens.get(*pos).map_or(false, |t| match t {
+        Token::Identifier { .. } => {
+            *pos += 1;
+            true
+        }
+        _ => false,
+    })
+}
+
 fn previous<'a>(tokens: &'a [Token], pos: &usize, line: usize) -> InterpreterResult<&'a Token> {
     tokens.get(*pos - 1).ok_or(InterpreterError::Parse { line })
+}
+
+fn expect_semicolon(tokens: &[Token], pos: &mut usize, line: usize) -> InterpreterResult<()> {
+    if let Some(Token::Semicolon { .. }) = tokens.get(*pos) {
+        *pos += 1;
+        Ok(())
+    } else {
+        Err(InterpreterError::SyntaxError {
+            line,
+            message: "Expected semicolon".into(),
+        })
+    }
+}
+
+fn synchronize(tokens: &[Token], pos: &mut usize) -> bool {
+    *pos += 1;
+    while let Some(t) = tokens.get(*pos) {
+        if let Some(Token::Semicolon { .. }) = previous(tokens, pos, 0).ok().as_ref() {
+            return true;
+        } else {
+            match t {
+                Token::Class { .. }
+                | Token::Fun { .. }
+                | Token::Var { .. }
+                | Token::For { .. }
+                | Token::If { .. }
+                | Token::While { .. }
+                | Token::Print { .. }
+                | Token::Return { .. } => return true,
+                _ => *pos += 1,
+            }
+        }
+    }
+    false
+}
+
+fn clean_tokens(tokens: Vec<Token>) -> Vec<Token> {
+    tokens
+        .into_iter()
+        .filter(|t| !matches!(t, Token::Comment | Token::Whitespace))
+        .collect()
 }
 
 #[cfg(test)]
@@ -474,6 +595,60 @@ mod tests {
             right: Box::new(Expr::literal_string("foo")),
         };
         assert_eq!(equality(&ts, &mut pos, 0)?, expected);
+        Ok(())
+    }
+    #[test]
+    fn parser_variable_initializer() -> InterpreterResult<()> {
+        let mut pos: usize = 0;
+        let ts = vec![
+            Token::Var { line: 0 },
+            Token::Identifier {
+                lexeme: String::from("foo"),
+                literal: String::from("foo"),
+                line: 0,
+            },
+            Token::Equal { line: 0 },
+            Token::Number {
+                lexeme: String::from("3.0"),
+                literal: 3.0,
+                line: 0,
+            },
+            Token::Semicolon { line: 0 },
+        ];
+        let expected = Stmt::Variable {
+            name: Token::Identifier {
+                lexeme: String::from("foo"),
+                literal: String::from("foo"),
+                line: 0,
+            },
+            initializer: Some(Box::new(Expr::literal_num(3.0))),
+        };
+        let actual = declaration(&ts, &mut pos, 0)?;
+        println!("{:?}", actual);
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+    #[test]
+    fn parser_variable_no_initializer() -> InterpreterResult<()> {
+        let mut pos: usize = 0;
+        let ts = vec![
+            Token::Var { line: 0 },
+            Token::Identifier {
+                lexeme: String::from("foo"),
+                literal: String::from("foo"),
+                line: 0,
+            },
+            Token::Semicolon { line: 0 },
+        ];
+        let expected = Stmt::Variable {
+            name: Token::Identifier {
+                lexeme: String::from("foo"),
+                literal: String::from("foo"),
+                line: 0,
+            },
+            initializer: None,
+        };
+        assert_eq!(declaration(&ts, &mut pos, 0)?, expected);
         Ok(())
     }
     #[test]

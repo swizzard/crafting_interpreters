@@ -32,8 +32,10 @@ pub enum InterpreterError {
         actual_type: String,
         line: Option<usize>,
     },
-    #[error("Syntax error on line {line}")]
-    SyntaxError { line: usize },
+    #[error("Syntax error on line {line}: {message}")]
+    SyntaxError { line: usize, message: String },
+    #[error("Undefined variable {name}{}", show_line(.line))]
+    UndefinedVariable { line: Option<usize>, name: String },
     #[error("An unknown error has occurred")]
     Unknown,
 }
@@ -53,12 +55,24 @@ impl InterpreterError {
             _ => panic!("don't do this"),
         }
     }
+    pub(crate) fn add_line_to_undefined_error(self, new_line: usize) -> Self {
+        match self {
+            Self::UndefinedVariable { line: _, name } => Self::UndefinedVariable {
+                line: Some(new_line),
+                name,
+            },
+            _ => panic!("don't do this"),
+        }
+    }
     pub(crate) fn type_error(expected_type: String, actual_type: String) -> Self {
         Self::Type {
             expected_type,
             actual_type,
             line: None,
         }
+    }
+    pub(crate) fn undefined_variable_error(name: String) -> Self {
+        Self::UndefinedVariable { name, line: None }
     }
 }
 
