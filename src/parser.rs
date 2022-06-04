@@ -1,7 +1,7 @@
 use crate::errors::{InterpreterError, InterpreterResult};
 use crate::expr::Expr;
-use crate::scanner::Token;
 use crate::stmt::Stmt;
+use crate::token::Token;
 
 pub fn parse(tokens: Vec<Token>) -> (Option<Stmt>, Vec<InterpreterError>) {
     let mut pos: usize = 0;
@@ -53,6 +53,10 @@ fn statement(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterRe
         Ok(Stmt::Print {
             expr: Box::new(expr),
         })
+    } else if match_block(tokens, pos) {
+        let stmts = block(tokens, pos, line)?;
+        expect_semicolon(tokens, pos, line)?;
+        Ok(Stmt::Block { stmts })
     } else {
         let expr = expression(tokens, pos, line)?;
         expect_semicolon(tokens, pos, line)?;
@@ -62,23 +66,37 @@ fn statement(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterRe
     }
 }
 
-fn expression(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Expr> {
-    if match_identifier(tokens, pos) {
-        assign(tokens, pos, line);
-    } else {
-        equality(tokens, pos, line)
+fn block(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Vec<Stmt>> {
+    let mut statements = Vec::default();
+    while !check_right_brace(tokens, pos) {
+        statements.push(declaration(tokens, pos, line)?);
     }
+    expect_right_brace(tokens, pos, line)?;
+    Ok(statements)
 }
 
-fn assign(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Stmt> {
-        *pos -= 1;
-        let name = identifier(tokens, pos, line)?;
-        if match_assign(tokens, pos) {
-            let initializer = Some(Box::new(expression(tokens, pos, line)?));
-            expect_semicolon(tokens, pos, line)?;
-            Ok(
+fn expression(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Expr> {
+    assign(tokens, pos, line)
+}
 
-    };
+fn assign(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Expr> {
+    let expr = equality(tokens, pos, line)?;
+    if match_assign(tokens, pos) {
+        let equals = previous(tokens, pos, line)?;
+        let value = assign(tokens, pos, line)?;
+        match expr {
+            Expr::Variable { name, .. } => Ok(Expr::Assign {
+                name,
+                value: Box::new(value),
+            }),
+            _ => Err(InterpreterError::SyntaxError {
+                line,
+                message: format!("Invalid assignment target {:?}", equals),
+            }),
+        }
+    } else {
+        Ok(expr)
+    }
 }
 
 fn equality(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResult<Expr> {
@@ -298,12 +316,19 @@ fn match_assign(tokens: &[Token], pos: &mut usize) -> bool {
     })
 }
 
-fn match_identifier(tokens: &[Token], pos: &mut usize) -> bool {
+fn match_block(tokens: &[Token], pos: &mut usize) -> bool {
     tokens.get(*pos).map_or(false, |t| match t {
-        Token::Identifier { .. } => {
+        Token::LeftBrace { .. } => {
             *pos += 1;
             true
         }
+        _ => false,
+    })
+}
+
+fn check_right_brace(tokens: &[Token], pos: &usize) -> bool {
+    tokens.get(*pos).map_or(false, |t| match t {
+        Token::RightBrace { .. } => true,
         _ => false,
     })
 }
@@ -320,6 +345,18 @@ fn expect_semicolon(tokens: &[Token], pos: &mut usize, line: usize) -> Interpret
         Err(InterpreterError::SyntaxError {
             line,
             message: "Expected semicolon".into(),
+        })
+    }
+}
+
+fn expect_right_brace(tokens: &[Token], pos: &mut usize, line: usize) -> InterpreterResult<()> {
+    if let Some(Token::RightBrace { .. }) = tokens.get(*pos) {
+        *pos += 1;
+        Ok(())
+    } else {
+        Err(InterpreterError::SyntaxError {
+            line,
+            message: "Expected right brace".into(),
         })
     }
 }
@@ -357,7 +394,7 @@ fn clean_tokens(tokens: Vec<Token>) -> Vec<Token> {
 mod tests {
     use super::*;
     use crate::expr::Expr;
-    use crate::scanner::Token;
+    use crate::token::Token;
 
     #[test]
     fn parser_primary() -> InterpreterResult<()> {
@@ -649,6 +686,33 @@ mod tests {
             initializer: None,
         };
         assert_eq!(declaration(&ts, &mut pos, 0)?, expected);
+        Ok(())
+    }
+    #[test]
+    fn parser_assign() -> InterpreterResult<()> {
+        let mut pos = 0_usize;
+        let ts = vec![
+            Token::Identifier {
+                lexeme: String::from("foo"),
+                literal: String::from("foo"),
+                line: 0,
+            },
+            Token::Equal { line: 0 },
+            Token::Number {
+                lexeme: String::from("3.0"),
+                literal: 3.0,
+                line: 0,
+            },
+        ];
+        let expected = Expr::Assign {
+            name: Token::Identifier {
+                lexeme: String::from("foo"),
+                literal: String::from("foo"),
+                line: 0,
+            },
+            value: Box::new(Expr::literal_num(3.0)),
+        };
+        assert_eq!(assign(&ts, &mut pos, 0)?, expected);
         Ok(())
     }
     #[test]

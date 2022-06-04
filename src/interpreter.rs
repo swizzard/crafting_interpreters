@@ -1,16 +1,19 @@
 use crate::environment::Environment;
 use crate::errors::{InterpreterError, InterpreterResult};
-use crate::expr::{Expr, Value};
-use crate::scanner::Token;
+use crate::expr::Expr;
 use crate::stmt::Stmt;
+use crate::token::Token;
+use crate::value::Value;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Default)]
 pub(crate) struct Interpreter {
-    env: Environment,
+    env: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
-    pub(crate) fn interpret(&mut self, stmt: &Stmt) -> InterpreterResult<Value> {
+    pub(crate) fn interpret(&self, stmt: &Stmt) -> InterpreterResult<Value> {
         match stmt {
             Stmt::Expr { expr } => self.interpret_expr(expr),
             Stmt::Print { expr } => {
@@ -25,7 +28,22 @@ impl Interpreter {
                     Some(initializer) => self.interpret_expr(initializer)?,
                     None => Value::Nil,
                 };
-                self.env.define(String::from(literal), val);
+                self.env.borrow_mut().define(String::from(literal), val);
+                Ok(Value::Nil)
+            }
+            Stmt::Block { stmts } => {
+                let new = Environment::new(Rc::clone(&self.env));
+                let previous = self.env.replace(new);
+                for stmt in stmts.iter() {
+                    match self.interpret(stmt) {
+                        Ok(_) => continue,
+                        Err(e) => {
+                            _ = self.env.replace(previous);
+                            return Err(e);
+                        }
+                    };
+                }
+                _ = self.env.replace(previous);
                 Ok(Value::Nil)
             }
             _ => Err(InterpreterError::SyntaxError {
@@ -42,6 +60,7 @@ impl Interpreter {
 
     fn interpret_expr(&self, expr: &Expr) -> InterpreterResult<Value> {
         match expr {
+            Expr::Assign { name, value } => self.interpret_assign(name, value),
             Expr::Literal { value } => Ok(value.clone()),
             Expr::Grouping { expression } => self.interpret_grouping(expression.as_ref()),
             Expr::Binary {
@@ -60,12 +79,27 @@ impl Interpreter {
         }
     }
     fn get_variable(&self, literal: &str, line: &usize) -> InterpreterResult<Value> {
-        match self.env.get(literal) {
-            Ok(v) => Ok(v.clone()),
-            Err(e) => Err(e.add_line_to_undefined_error(*line)),
-        }
+        self.env
+            .borrow()
+            .get(literal)
+            .map_err(|e| e.add_line_to_undefined_error(*line))
     }
 
+    fn interpret_assign(&self, name: &Token, value: &Expr) -> InterpreterResult<Value> {
+        match name {
+            Token::Identifier { literal, line, .. } => {
+                let v = self.interpret_expr(value)?;
+                self.env
+                    .borrow_mut()
+                    .assign(literal, v)
+                    .map_err(|e| e.add_line_to_undefined_error(*line))
+            }
+            t => Err(InterpreterError::SyntaxError {
+                line: t.get_line().unwrap_or(0),
+                message: "Invalid assignment".into(),
+            }),
+        }
+    }
     fn interpret_grouping(&self, expr: &Expr) -> InterpreterResult<Value> {
         self.interpret_expr(expr)
     }
@@ -498,7 +532,7 @@ mod tests {
     }
     #[test]
     fn interpreter_define_variable_initializer() -> InterpreterResult<()> {
-        let mut interpreter = Interpreter::default();
+        let interpreter = Interpreter::default();
         let s = Stmt::Variable {
             name: Token::Identifier {
                 literal: String::from("foo"),
@@ -513,7 +547,7 @@ mod tests {
     }
     #[test]
     fn interpreter_define_variable_no_initializer() -> InterpreterResult<()> {
-        let mut interpreter = Interpreter::default();
+        let interpreter = Interpreter::default();
         let s = Stmt::Variable {
             name: Token::Identifier {
                 literal: String::from("foo"),
@@ -524,6 +558,86 @@ mod tests {
         };
         interpreter.interpret(&s)?;
         assert_eq!(interpreter.get_variable("foo", &0)?, Value::Nil);
+        Ok(())
+    }
+    #[test]
+    fn interpreter_assign_ok() -> InterpreterResult<()> {
+        let interpreter = Interpreter::default();
+        let s = Stmt::Expr {
+            expr: Box::new(Expr::Assign {
+                name: Token::Identifier {
+                    line: 0,
+                    literal: String::from("foo"),
+                    lexeme: String::from("foo"),
+                },
+                value: Box::new(Expr::literal_num(3.0)),
+            }),
+        };
+        interpreter
+            .env
+            .borrow_mut()
+            .define("foo".into(), (2.0).try_into().unwrap());
+        assert_eq!(interpreter.interpret(&s)?, Value::Number(3.0));
+        assert_eq!(interpreter.get_variable("foo", &0)?, Value::Number(3.0));
+        Ok(())
+    }
+    #[test]
+    fn interpreter_assign_err() {
+        let interpreter = Interpreter::default();
+        let s = Stmt::Expr {
+            expr: Box::new(Expr::Assign {
+                name: Token::Identifier {
+                    line: 0,
+                    literal: String::from("foo"),
+                    lexeme: String::from("foo"),
+                },
+                value: Box::new(Expr::literal_num(3.0)),
+            }),
+        };
+        assert!(matches!(
+            interpreter.interpret(&s),
+            Err(InterpreterError::UndefinedVariable { .. })
+        ));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn interpreter_block() -> InterpreterResult<()> {
+        use gag::BufferRedirect;
+        use std::io::Read;
+        let v_name = "foo";
+        let interpreter = Interpreter::default();
+        let s = Stmt::Block {
+            stmts: vec![
+                Stmt::Variable {
+                    name: Token::Identifier {
+                        literal: String::from(v_name),
+                        lexeme: String::from(v_name),
+                        line: 0,
+                    },
+                    initializer: Some(Box::new(Expr::literal_num(2.0))),
+                },
+                Stmt::Print {
+                    expr: Box::new(Expr::Variable {
+                        name: Token::Identifier {
+                            literal: String::from(v_name),
+                            lexeme: String::from(v_name),
+                            line: 0,
+                        },
+                    }),
+                },
+            ],
+        };
+        interpreter
+            .env
+            .borrow_mut()
+            .define(String::from(v_name), Value::Number(3.0));
+        let mut output = String::default();
+        {
+            let mut buf = BufferRedirect::stdout().unwrap();
+            interpreter.interpret(&s)?;
+            buf.read_to_string(&mut output).unwrap();
+        };
+        assert_eq!(&output[..], "2\n");
         Ok(())
     }
 }
