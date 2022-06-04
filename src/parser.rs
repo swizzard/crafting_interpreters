@@ -202,6 +202,7 @@ fn primary(tokens: &Vec<Token>, pos: &mut usize, line: usize) -> InterpreterResu
                 .get(*pos)
                 .ok_or(InterpreterError::Parse { line: *line })?;
             if let Token::RightParen { .. } = *next {
+                *pos += 1;
                 Ok(Expr::Grouping {
                     expression: Box::new(expr),
                 })
@@ -327,10 +328,9 @@ fn match_block(tokens: &[Token], pos: &mut usize) -> bool {
 }
 
 fn check_right_brace(tokens: &[Token], pos: &usize) -> bool {
-    tokens.get(*pos).map_or(false, |t| match t {
-        Token::RightBrace { .. } => true,
-        _ => false,
-    })
+    tokens
+        .get(*pos)
+        .map_or(false, |t| matches!(t, Token::RightBrace { .. }))
 }
 
 fn previous<'a>(tokens: &'a [Token], pos: &usize, line: usize) -> InterpreterResult<&'a Token> {
@@ -661,7 +661,6 @@ mod tests {
             initializer: Some(Box::new(Expr::literal_num(3.0))),
         };
         let actual = declaration(&ts, &mut pos, 0)?;
-        println!("{:?}", actual);
         assert_eq!(actual, expected);
         Ok(())
     }

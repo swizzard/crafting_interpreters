@@ -64,12 +64,12 @@ impl TryFrom<bool> for Value {
     }
 }
 
-impl TryFrom<Value> for f32 {
+impl TryFrom<&Value> for f32 {
     type Error = InterpreterError;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Number(n) => Ok(n),
+            Value::Number(n) => Ok(*n),
             Value::Bool(_) => Err(InterpreterError::type_error(
                 String::from("number"),
                 String::from("boolean"),
@@ -86,10 +86,10 @@ impl TryFrom<Value> for f32 {
     }
 }
 
-impl TryFrom<Value> for String {
+impl TryFrom<&Value> for String {
     type Error = InterpreterError;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
         match value {
             Value::Number(_) => Err(InterpreterError::type_error(
                 String::from("string"),
@@ -99,7 +99,7 @@ impl TryFrom<Value> for String {
                 String::from("string"),
                 String::from("boolean"),
             )),
-            Value::r#String(s) => Ok(s),
+            Value::r#String(s) => Ok(s.clone()),
             Value::Nil => Err(InterpreterError::type_error(
                 String::from("string"),
                 String::from("nil"),
@@ -108,19 +108,19 @@ impl TryFrom<Value> for String {
     }
 }
 
-impl TryFrom<Value> for bool {
+impl TryFrom<&Value> for bool {
     type Error = InterpreterError;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
         match value {
             Value::Number(_) => Err(InterpreterError::type_error(
                 String::from("boolean"),
                 String::from("number"),
             )),
-            Value::Bool(b) => Ok(b),
+            Value::Bool(b) => Ok(*b),
             Value::r#String(_) => Err(InterpreterError::type_error(
-                String::from("string"),
                 String::from("boolean"),
+                String::from("string"),
             )),
             Value::Nil => Ok(false),
         }

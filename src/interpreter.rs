@@ -110,51 +110,53 @@ impl Interpreter {
         left: &Expr,
         right: &Expr,
     ) -> InterpreterResult<Value> {
+        let left = self.interpret_expr(left)?;
+        let right = self.interpret_expr(right)?;
         match operator {
             Token::Minus { line } => {
-                let left = cast_f32(left, line)?;
-                let right = cast_f32(right, line)?;
+                let left = cast_f32(&left, line)?;
+                let right = cast_f32(&right, line)?;
                 Ok(Value::Number(left - right))
             }
             Token::Slash { line } => {
-                let left = cast_f32(left, line)?;
-                let right = cast_f32(right, line)?;
+                let left = cast_f32(&left, line)?;
+                let right = cast_f32(&right, line)?;
                 Ok(Value::Number(left / right))
             }
             Token::Star { line } => {
-                let left = cast_f32(left, line)?;
-                let right = cast_f32(right, line)?;
+                let left = cast_f32(&left, line)?;
+                let right = cast_f32(&right, line)?;
                 Ok(Value::Number(left * right))
             }
             Token::Plus { line } => {
-                let left_num = cast_f32(left, line);
+                let left_num = cast_f32(&left, line);
                 if left_num.is_ok() {
-                    let right_num = cast_f32(right, line)?;
+                    let right_num = cast_f32(&right, line)?;
                     left_num.map(|n| Value::Number(n + right_num))
                 } else {
-                    let left_str = cast_string(left, line)?;
-                    let right_str = cast_string(right, line)?;
+                    let left_str = cast_string(&left, line)?;
+                    let right_str = cast_string(&right, line)?;
                     Ok(Value::r#String(format!("{}{}", left_str, right_str)))
                 }
             }
             Token::Greater { line } => {
-                let left = cast_f32(left, line)?;
-                let right = cast_f32(right, line)?;
+                let left = cast_f32(&left, line)?;
+                let right = cast_f32(&right, line)?;
                 Ok(Value::Bool(left > right))
             }
             Token::Less { line } => {
-                let left = cast_f32(left, line)?;
-                let right = cast_f32(right, line)?;
+                let left = cast_f32(&left, line)?;
+                let right = cast_f32(&right, line)?;
                 Ok(Value::Bool(left < right))
             }
             Token::GreaterEqual { line } => {
-                let left = cast_f32(left, line)?;
-                let right = cast_f32(right, line)?;
+                let left = cast_f32(&left, line)?;
+                let right = cast_f32(&right, line)?;
                 Ok(Value::Bool(left >= right))
             }
             Token::LessEqual { line } => {
-                let left = cast_f32(left, line)?;
-                let right = cast_f32(right, line)?;
+                let left = cast_f32(&left, line)?;
+                let right = cast_f32(&right, line)?;
                 Ok(Value::Bool(left <= right))
             }
             Token::EqualEqual { .. } => Ok(Value::Bool(left == right)),
@@ -167,13 +169,14 @@ impl Interpreter {
     }
 
     fn interpret_unary(&self, operator: &Token, right: &Expr) -> InterpreterResult<Value> {
+        let right = self.interpret_expr(right)?;
         match operator {
             Token::Minus { line } => {
-                let num = cast_f32(right, line)?;
+                let num = cast_f32(&right, line)?;
                 Ok(Value::Number(-num))
             }
             Token::Bang { line } => {
-                let b = cast_bool(right, line)?;
+                let b = cast_bool(&right, line)?;
                 Ok(Value::Bool(!b))
             }
             t => Err(InterpreterError::SyntaxError {
@@ -184,15 +187,15 @@ impl Interpreter {
     }
 }
 
-fn cast_f32(expr: &Expr, line: &usize) -> InterpreterResult<f32> {
+fn cast_f32(expr: &Value, line: &usize) -> InterpreterResult<f32> {
     f32::try_from(expr).map_err(|e| e.add_line_to_type_error(*line))
 }
 
-fn cast_string(expr: &Expr, line: &usize) -> InterpreterResult<String> {
+fn cast_string(expr: &Value, line: &usize) -> InterpreterResult<String> {
     String::try_from(expr).map_err(|e| e.add_line_to_type_error(*line))
 }
 
-fn cast_bool(expr: &Expr, line: &usize) -> InterpreterResult<bool> {
+fn cast_bool(expr: &Value, line: &usize) -> InterpreterResult<bool> {
     bool::try_from(expr).map_err(|e| e.add_line_to_type_error(*line))
 }
 
@@ -601,6 +604,8 @@ mod tests {
     }
     #[cfg(unix)]
     #[test]
+    #[ignore]
+    // only works when called by itself
     fn interpreter_block() -> InterpreterResult<()> {
         use gag::BufferRedirect;
         use std::io::Read;
